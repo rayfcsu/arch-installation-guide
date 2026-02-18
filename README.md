@@ -38,38 +38,13 @@
 - [Additional notes](#additional-notes)
 - [Things to add](#things-to-add)
 
-# Introduction
-
-The goal of this guide is to help new users set up a modern and minimal installation of **Arch Linux** with **BTRFS** on an **UEFI system**. I'll start from the basic terminal installation and then set up **video drivers, a desktop environment and provide basic gaming configuration**. This guide is thought to be read alongside the wiki, so that it if something ever changes you can fix it but it's not necessary unless my guide becomes outdated. Also I will mention external references to justify some choices that I've made so that curious users can delve into the details.  
-
-### Note that:
-
-- I **won't** prepare the system for **secure boot** because the procedure of custom key enrollment in the BIOS is dangerous and [can lead to a bricked system](https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot#Creating_and_enrolling_keys). If you are wondering why not using the default OEM keys in the BIOS, it's because they will make secure boot useless by being most likely [not enough secure](https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot#Implementing_Secure_Boot).
-
-- I **won't** encrypt the system because I don't need it and because encryption always adds a little bit of overhead in the boot phase leading to a **slower to varying degrees** start\-up, depending on your configuration. However it may be important for you so if you really wanna go this way I recommend reading [the wiki page in this regards](https://wiki.archlinux.org/title/Dm-crypt) and **must** perform the documented steps **IMMEDIATELY AFTER** [disk partitioning](#disk-partitioning). Also note that you must set the type of partition to a LUKS partition instead of a standard Linux partition when partitioning with `fdisk`.
-
-- I'll **skip** the Arch ISO installation media preparation.
-
-- I'll use a **wired** connection, so no wireless configuration steps will be shown. If you want to connect to wifi, you can either launch `wifi-menu` from the terminal which is a **TGUI** or use [`iwctl`](https://wiki.archlinux.org/title/Iwd#iwctl).
-
-<br>
-
 # Preliminary steps  
 
 First set up your keyboard layout  
 
-```Zsh
-# List all the available keyboard maps and filter them through grep, in this case i am looking for an italian keyboard, which usually starts with "it", for english filter with "en"
-ls /usr/share/kbd/keymaps/**/*.map.gz | grep it
-
-# If you prefer you can scroll the whole list like this
-ls /usr/share/kbd/keymaps/**/*.map.gz | less
-
-# Or like this
-localectl list-keymaps
-
-# Now get the name without the path and the extension ( localectl returns just the name ) and load the layout. In my case it is simply "it"
-loadkeys it
+```
+```
+loadkeys us
 ```
 
 <br>
@@ -82,6 +57,22 @@ cat /sys/firmware/efi/fw_platform_size
 ```
 
 <br>
+
+Setup the internet connection
+
+```
+
+# start the service
+systemctl start iwd 
+
+# when in iwctl
+[iwd]# device list
+
+# device name is most likely wlan0; scan for avail networks 
+[iwd]# station wlan0 scan 
+[iwd]# station wlan0 get-networks 
+[iwd]# station wlan0 connect <network_name> 
+```
 
 Check the internet connection  
 
@@ -99,9 +90,6 @@ timedatectl
 
 # In case it's not active you can do
 timedatectl set-ntp true
-
-# Or this
-systemctl enable systemd-timesyncd.service
 ```
 
 <br>
@@ -110,26 +98,12 @@ systemctl enable systemd-timesyncd.service
 
 ## Disk partitioning
 
-I will make 2 partitions:  
-
-| Number | Type | Size |
-| --- | --- | --- |
-| 1 | EFI | 512 Mb |
-| 2 | Linux Filesystem | 99.5Gb \(all of the remaining space \) |  
-
 <br>
 
 ```Zsh
 # Check the drive name. Mine is /dev/nvme0n1
 # If you have an hdd is something like sdax
 fdisk -l
-
-# Now you can either go and partition your disk with fdisk and follow the steps below,
-# or if you want to do things yourself and make it easier, use cfdisk ( an fdisk TUI wrapper ) which is
-# much more user friendly. A reddit user suggested me this and it's indeed very intuitive to use.
-# If you choose cfdisk you will have to invoke it the same way as I did with fdisk below, but
-# you don't need to follow my commands blindly as with fdisk below, just navigate the UI with the arrows
-# and press enter to get inside menus, remember to write changes before quitting.
 
 # Invoke fdisk to partition
 fdisk /dev/nvme0n1
@@ -141,7 +115,7 @@ n
 ENTER
 ENTER
 ENTER
-+512M
++1G
 ENTER
 t
 ENTER
@@ -151,7 +125,7 @@ ENTER
 n
 ENTER
 ENTER
-ENTER # If you don't want to use all the space then select the size by writing +XG ( eg: to make a 10GB partition +10G )
++1T
 p
 ENTER # Now check if you got the partitions right
 
@@ -168,7 +142,6 @@ ENTER
 
 ## Disk formatting  
 
-For the file system I've chosen [**BTRFS**](https://wiki.archlinux.org/title/Btrfs) which has evolved quite a lot in the recent years. It is most known for its **Copy on Write** feature which enables it to make system snapshots in a blink of a an eye and to save a lot of disk space, which can be even saved to a greater extent by enabling built\-in **compression**. Also it lets the user create **subvolumes** which can be individually snapshotted.
 
 ```Zsh
 # Find the efi partition with fdisk -l or lsblk. For me it's /dev/nvme0n1p1 and format it.
@@ -185,13 +158,12 @@ mount /dev/nvme0n1p2 /mnt
 
 ## Disk mounting
 
-I will lay down the subvolumes on a **flat** layout, which is overall superior in my opinion and less constrained than a **nested** one. What's the difference ? If you're interested [this section of the old sysadmin guide](https://archive.kernel.org/oldwiki/btrfs.wiki.kernel.org/index.php/SysadminGuide.html#Layout) explains it.
-
 ```Zsh
 # Create the subvolumes, in my case I choose to make a subvolume for / and one for /home. Subvolumes are identified by prepending @
 # NOTICE: the list of subvolumes will be increased in a later release of this guide, upon proper testing and judgement. See the "Things to add" chapter.
 btrfs subvolume create /mnt/@
 btrfs subvolume create /mnt/@home
+btrfs subvolume create /mnt/@swap 
 
 # Unmount the root fs
 umount /mnt
@@ -206,6 +178,12 @@ For this guide I'll compress the btrfs subvolumes with **Zstd**, which has prove
 mount -o compress=zstd,subvol=@ /dev/nvme0n1p2 /mnt
 mkdir -p /mnt/home
 mount -o compress=zstd,subvol=@home /dev/nvme0n1p2 /mnt/home
+mkdir -p /mnt/swap 
+mount -o compress=zstd,subvol=@swap /dev/nvme0n1p2 /mnt/swap
+
+# create the swapfile 
+btrfs filesystem mkswapfile --size 4g --uuid clear /swap/swapfile 
+swapon /swap/swapfile 
 ```
 
 <br>
@@ -224,27 +202,7 @@ mount /dev/nvme0n1p1 /mnt/efi
 ```Zsh
 # This will install some packages to "bootstrap" methaphorically our system. Feel free to add the ones you want
 # "base, linux, linux-firmware" are needed. If you want a more stable kernel, then swap linux with linux-lts
-# "base-devel" base development packages
-# "git" to install the git vcs
-# "btrfs-progs" are user-space utilities for file system management ( needed to harness the potential of btrfs )
-# "grub" the bootloader
-# "efibootmgr" needed to install grub
-# "grub-btrfs" adds btrfs support for the grub bootloader and enables the user to directly boot from snapshots
-# "inotify-tools" used by grub btrfsd deamon to automatically spot new snapshots and update grub entries
-# "timeshift" a GUI app to easily create,plan and restore snapshots using BTRFS capabilities
-# "amd-ucode" microcode updates for the cpu. If you have an intel one use "intel-ucode"
-# "vim" my goto editor, if unfamiliar use nano
-# "networkmanager" to manage Internet connections both wired and wireless ( it also has an applet package network-manager-applet )
-# "pipewire pipewire-alsa pipewire-pulse pipewire-jack" for the new audio framework replacing pulse and jack. 
-# "wireplumber" the pipewire session manager.
-# "reflector" to manage mirrors for pacman
-# "zsh" my favourite shell
-# "zsh-completions" for zsh additional completions
-# "zsh-autosuggestions" very useful, it helps writing commands [ Needs configuration in .zshrc ]
-# "openssh" to use ssh and manage keys
-# "man" for manual pages
-# "sudo" to run commands as other users
-pacstrap -K /mnt base base-devel linux linux-firmware git btrfs-progs grub efibootmgr grub-btrfs inotify-tools timeshift vim networkmanager pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber reflector zsh zsh-completions zsh-autosuggestions openssh man sudo
+pacstrap -K /mnt base base-devel linux linux-firmware git btrfs-progs grub efibootmgr grub-btrfs inotify-tools timeshift vim networkmanager pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber reflector zsh zsh-completions zsh-autosuggestions openssh man sudo iwctl intel-ucode 
 ```
 
 <br>
@@ -274,7 +232,7 @@ arch-chroot /mnt
 
 ```Zsh
 # In our new system we have to set up the local time zone, find your one in /usr/share/zoneinfo mine is /usr/share/zoneinfo/Europe/Rome and create a symbolic link to /etc/localtime
-ln -sf /usr/share/zoneinfo/Europe/Rome /etc/localtime
+ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
 # Now sync the system time to the hardware clock
 hwclock --systohc
@@ -305,7 +263,7 @@ vim /etc/locale.conf
 
 <br>
 
-Now to make the current keyboard layout permanent for tty sessions , create `/etc/vconsole.conf` and write `KEYMAP=your_key_map` substituting the keymap with the one previously set [here](#preliminary-steps). In my case `KEYMAP=it`
+Now to make the current keyboard layout permanent for tty sessions , create `/etc/vconsole.conf` and write `KEYMAP=your_key_map` substituting the keymap with the one previously set [here](#preliminary-steps). In my case `KEYMAP=us`
 
 ```Zsh
 vim /etc/vconsole.conf
@@ -355,9 +313,6 @@ passwd mjkstra
 # You can choose a different editor than vim by changing the EDITOR variable
 # Once opened, you have to look for a line which says something like "Uncomment to let members of group wheel execute any action"
 # and uncomment exactly the line BELOW it, by removing the #. This will grant superuser priviledges to your user.
-# Why are we issuing this command instead of a simple vim /etc/sudoers ? 
-# Because visudo does more than opening the editor, for example it locks the file from being edited simultaneously and
-# runs syntax checks to avoid committing an unreadable file.
 EDITOR=vim visudo
 ```
 
@@ -400,6 +355,9 @@ reboot
 
 # Enable and start the time synchronization service
 timedatectl set-ntp true
+
+# connect to the internet using nmcli 
+sudo nmcli wlan0 connect <network_name> password <password>
 ```
 
 <br>
