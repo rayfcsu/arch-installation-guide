@@ -54,11 +54,10 @@ There are two partitions:
 | Number | Type | Size |
 | --- | --- | --- |
 | 1 | EFI | 512 Mb |
-| 2 | Linux Filesystem | 999.5Gb \(all of the remaining space \) |  
+| 2 | Linux Filesystem | 999Gb \(all of the remaining space \) |  
+<br>
 
 ## Disk partitioning
-
-<br>
 
 ```Zsh
 # check drive name (ex. /dev/nvme0n1)
@@ -84,7 +83,7 @@ ENTER
 n
 ENTER
 ENTER
-+1T
++999G
 p
 ENTER # check if you got the partitions right
 
@@ -110,7 +109,6 @@ mkfs.btrfs /dev/nvme0n1p2
 # Mount the root fs to make it accessible
 mount /dev/nvme0n1p2 /mnt
 ```
-
 <br>
 
 ## Disk mounting
@@ -127,7 +125,6 @@ umount /mnt
 <br>
 
 For this guide I'll compress the btrfs subvolumes with **Zstd**, which has proven to be [a good algorithm among the choices](https://www.phoronix.com/review/btrfs-zstd-compress)  
-
 ```Zsh
 # Mount the root and home subvolume. If you don't want compression just remove the compress option.
 mount -o compress=zstd,subvol=@ /dev/nvme0n1p2 /mnt
@@ -143,7 +140,6 @@ swapon /swap/swapfile
 <br>
 
 Now we have to mount the efi partition. In general there are 2 main mountpoints to use: `/efi` or `/boot` but in this configuration i am **forced** to use `/efi`, because by choosing `/boot` we could experience a **system crash** when trying to restore `@` _\( the root subvolume \)_ to a previous state after kernel updates. This happens because `/boot` files such as the kernel won't reside on `@` but on the efi partition and hence they can't be saved when snapshotting `@`. Also this choice grants separation of concerns and also is good if one wants to encrypt `/boot`, since you can't encrypt efi files. Learn more [here](https://wiki.archlinux.org/title/EFI_system_partition#Typical_mount_points)
-
 ```Zsh
 mkdir -p /mnt/efi
 mount /dev/nvme0n1p1 /mnt/efi
@@ -202,8 +198,7 @@ locale-gen
 ```
 <br>
 
-Since the locale is generated but still not active, we will create the configuration file `/etc/locale.conf` and set the locale to the desired one by setting the `LANG` variable accordingly. We will write `LANG=en_US.UTF-8` in `locale.conf`. More on this [here](https://wiki.archlinux.org/title/Locale#Variables)
-
+Since the locale is generated but still not active, we will create the configuration file `/etc/locale.conf` and set the locale to the desired one by setting the `LANG` variable accordingly. We will write `LANG=en_US.UTF-8` in `locale.conf`. 
 ```Zsh
 touch /etc/locale.conf
 vim /etc/locale.conf
@@ -211,7 +206,6 @@ vim /etc/locale.conf
 <br>
 
 Now to make the current keyboard layout permanent for tty sessions , create `/etc/vconsole.conf` and write `KEYMAP=us`
-
 ```Zsh
 vim /etc/vconsole.conf
 ```
@@ -229,7 +223,6 @@ touch /etc/hosts
 ```
 
 Write the following ip, hostname pairs inside /etc/hosts, replacing `Arch` with **YOUR** hostname:
-
 ```
 127.0.0.1 localhost
 ::1 localhost
@@ -264,14 +257,12 @@ EDITOR=vim visudo
 ## Grub configuration  
 
 Now I'll [deploy grub](https://wiki.archlinux.org/title/GRUB#Installation)  
-
 ```Zsh
 grub-install --target=x86_64-efi --efi-directory=/efi --bootloader-id=GRUB  
 ```
 <br>
 
 Generate the grub configuration ( it will include the microcode installed with pacstrap earlier )  
-
 ```Zsh
 grub-mkconfig -o /boot/grub/grub.cfg
 ```
@@ -307,14 +298,12 @@ sudo nmcli wlan0 connect <network_name> password <password>
 Each time a system snapshot is taken with timeshift, it will be available for boot in the bootloader, however you need to manually regenerate the grub configuration, this can be avoided thanks to `grub-btrfs`, which can automatically update the grub boot entries.  
 
 Edit the **`grub-btrfsd`** service and because I will rely on timeshift for snapshotting, I am going to replace `ExecStart=...` with `ExecStart=/usr/bin/grub-btrfsd --syslog --timeshift-auto`. If you don't use timeshift or prefer to manually update the entries then lookup [here](https://github.com/Antynea/grub-btrfs)  
-
 ```Zsh 
 sudo systemctl edit --full grub-btrfsd
 
 # Enable grub-btrfsd service to run on boot
 sudo systemctl enable grub-btrfsd
 ```
-
 <br>
 
 ## Aur helper and additional packages installation  
@@ -322,7 +311,6 @@ sudo systemctl enable grub-btrfsd
 To gain access to the arch user repository we need an aur helper, I will choose yay which also works as a pacman wrapper \( which means you can use yay instead of pacman \). 
 
 To learn more about yay read [here](https://github.com/Jguer/yay#yay)  
-
 ```Zsh
 # install yay
 sudo pacman -S --needed git base-devel && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
@@ -343,9 +331,7 @@ reboot
 
 # Video drivers
 
-In order to have the smoothest experience on a graphical environment, **Gaming included**, we first need to install video drivers. To help you choose which one you want or need, read [this section](https://wiki.archlinux.org/title/Xorg#Driver_installation) of the arch wiki.  
-<br>
-
+In order to have the smoothest experience on a graphical environment, **Gaming included**, we first need to install video drivers.
 ```
 sudo pacman -S mesa vulkan-intel libva-mesa-driver mesa-vdpau
 ```
